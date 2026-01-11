@@ -13,7 +13,7 @@ Reusable GitHub Actions workflows for Claude Code integration.
 
 ### 1. Set up secrets
 
-Add `CLAUDE_CODE_OAUTH_TOKEN` to your repository secrets.
+Add `CLAUDE_CODE_OAUTH_TOKEN` to your repository secrets. See [Syncing Secrets](#syncing-secrets) below for an automated approach.
 
 ### 2. Create workflow files
 
@@ -90,6 +90,65 @@ Both workflows include authorization checks. Only users with matching `author_as
 - Never allow `CONTRIBUTOR` or `FIRST_TIME_CONTRIBUTOR` in production
 - Restrict `allowed_tools` to minimum required
 - Rotate tokens if compromise is suspected
+
+## Syncing Secrets
+
+Managing the same secret across multiple repositories is tedious. The `sync-secrets.py` script automates this by:
+
+1. Reading the secret value from your **macOS Keychain** (no manual input needed)
+2. Syncing it to all configured repositories via `gh secret set`
+
+### Prerequisites
+
+- macOS (for Keychain integration)
+- `gh` CLI authenticated (`gh auth login`)
+- `uv` for running the script
+
+### Usage
+
+```bash
+# Check which repos have/need the secret
+uv run scripts/sync-secrets.py list
+
+# Preview what would be synced
+uv run scripts/sync-secrets.py sync --dry-run --all
+
+# Sync secrets (reads from Keychain automatically)
+uv run scripts/sync-secrets.py sync --all
+```
+
+### Configuration
+
+Edit `scripts/secrets.yaml` to define secrets and target repositories:
+
+```yaml
+secrets:
+  CLAUDE_CODE_OAUTH_TOKEN:
+    description: OAuth token for Claude Code GitHub Action
+    keychain:
+      service: Claude Code-credentials       # Keychain item name
+      json_path: claudeAiOauth.accessToken   # JSON path to extract
+
+repos:
+  simonheimlicher/spx-gh-actions:
+    secrets:
+      - CLAUDE_CODE_OAUTH_TOKEN
+  simonheimlicher/another-repo:
+    secrets:
+      - CLAUDE_CODE_OAUTH_TOKEN
+```
+
+### How Keychain Integration Works
+
+The script uses macOS `security` CLI to read from your login keychain:
+
+```bash
+security find-generic-password -s "Claude Code-credentials" -a "$USER" -w
+```
+
+On first run, macOS will prompt you to allow access. Click "Always Allow" to avoid future prompts.
+
+If the keychain lookup fails, the script falls back to prompting for the value.
 
 ## License
 
