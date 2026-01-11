@@ -1,0 +1,88 @@
+# Reusable Claude Code workflow for @claude mentions
+#
+# Usage in caller workflow:
+#
+#   on:
+#     issue_comment:
+#       types: [created, edited]
+#     pull_request_review_comment:
+#       types: [created, edited]
+#     issues:
+#       types: [opened, assigned]
+#     pull_request_review:
+#       types: [submitted]
+#
+#   jobs:
+#     claude:
+#       uses: simonheimlicher/spx-gh-actions/.github/workflows/claude.yml@main
+#       secrets:
+#         CLAUDE_CODE_OAUTH_TOKEN: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+
+name: Claude Code
+
+on:
+  workflow_call:
+    inputs:
+      authorized_roles:
+        description: 'JSON array of GitHub author associations allowed to trigger (e.g., ["OWNER", "MEMBER"])'
+        type: string
+        default: '["OWNER", "MEMBER", "COLLABORATOR"]'
+      mention_trigger:
+        description: 'Text that triggers the workflow'
+        type: string
+        default: '@claude'
+      concurrency_cancel:
+        description: 'Cancel in-progress runs when new mention arrives'
+        type: boolean
+        default: true
+      allowed_tools:
+        description: 'Claude Code --allowed-tools argument (empty = unrestricted)'
+        type: string
+        default: ''
+      custom_prompt:
+        description: 'Custom prompt to override default behavior'
+        type: string
+        default: ''
+    secrets:
+      CLAUDE_CODE_OAUTH_TOKEN:
+        description: 'Claude Code OAuth token'
+        required: true
+
+jobs:
+  claude:
+    concurrency:
+      group: claude-${{ github.event.issue.number || github.event.pull_request.number }}
+      cancel-in-progress: ${{ inputs.concurrency_cancel }}
+    if: |
+      (
+        (github.event_name == 'issue_comment' && contains(github.event.comment.body, inputs.mention_trigger) &&
+         contains(fromJSON(inputs.authorized_roles), github.event.comment.author_association)) ||
+        (github.event_name == 'pull_request_review_comment' && contains(github.event.comment.body, inputs.mention_trigger) &&
+         contains(fromJSON(inputs.authorized_roles), github.event.comment.author_association)) ||
+        (github.event_name == 'pull_request_review' && contains(github.event.review.body, inputs.mention_trigger) &&
+         contains(fromJSON(inputs.authorized_roles), github.event.review.author_association)) ||
+        (github.event_name == 'issues' && (contains(github.event.issue.body, inputs.mention_trigger) || contains(github.event.issue.title, inputs.mention_trigger)) &&
+         contains(fromJSON(inputs.authorized_roles), github.event.issue.author_association))
+      )
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: read
+      issues: read
+      id-token: write
+      actions: read
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+
+      - name: Run Claude Code
+        id: claude
+        uses: anthropics/claude-code-action@v1
+        with:
+          claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+          additional_permissions: |
+            actions: read
+          prompt: ${{ inputs.custom_prompt }}
+          claude_args: ${{ inputs.allowed_tools }}
